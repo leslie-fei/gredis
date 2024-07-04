@@ -25,7 +25,7 @@ func main() {
 	flag.StringVar(&network, "network", "tcp", "server network (default \"tcp\")")
 	flag.StringVar(&addr, "addr", ":6380", "server addr (default \":6380\")")
 	flag.BoolVar(&multicore, "multicore", true, "multicore")
-	flag.BoolVar(&reusePort, "reusePort", false, "reusePort")
+	flag.BoolVar(&reusePort, "reusePort", true, "reusePort")
 	flag.BoolVar(&enableTLS, "tls", false, "enable TLS")
 	flag.Parse()
 
@@ -123,7 +123,7 @@ func main() {
 		}
 	}
 
-	err := gr.Serve("tcp://:6380", tc, gnet.WithMulticore(multicore), gnet.WithReuseAddr(reusePort))
+	err := gr.Serve("tcp://:6380", tc, gnet.WithMulticore(multicore), gnet.WithReusePort(reusePort))
 	if err != nil {
 		panic(err)
 	}
