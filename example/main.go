@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"io"
-	"net/http"
-	_ "net/http/pprof"
 	"strings"
 	"sync"
 	"unsafe"
@@ -15,9 +13,6 @@ import (
 )
 
 func main() {
-	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
-	}()
 	var mu sync.RWMutex
 	var items = make(map[string][]byte, 1024)
 	var network string
@@ -30,8 +25,37 @@ func main() {
 	flag.BoolVar(&reusePort, "reusePort", false, "reusePort")
 	flag.Parse()
 
-	gr := gredis.NewGRedis(func(cmd resp.Command) (out []byte, err error) {
+	gr := gredis.NewGRedis()
+	gr.OnCommand(func(conn gnet.Conn, cmd resp.Command) (out []byte, err error) {
 		switch strings.ToLower(b2s(cmd.Args[0])) {
+		case "publish":
+			// Publish to all pub/sub subscribers and return the number of
+			// messages that were sent.
+			if len(cmd.Args) != 3 {
+				out = resp.AppendError(out, "ERR wrong number of arguments for '"+string(cmd.Args[0])+"' command")
+				return
+			}
+			count := gr.Publish(string(cmd.Args[1]), string(cmd.Args[2]))
+			out = resp.AppendInt(out, int64(count))
+		case "subscribe", "psubscribe":
+			// Subscribe to a pub/sub channel. The `Psubscribe` and
+			// `Subscribe` operations will detach the connection from the
+			// event handler and manage all network I/O for this connection
+			// in the background.
+			if len(cmd.Args) < 2 {
+				out = resp.AppendError(out, "ERR wrong number of arguments for '"+string(cmd.Args[0])+"' command")
+				return
+			}
+			command := strings.ToLower(string(cmd.Args[0]))
+			channels := make([]string, 0, len(cmd.Args))
+			pattern := false
+			if command == "psubscribe" {
+				pattern = true
+			}
+			for i := 1; i < len(cmd.Args); i++ {
+				channels = append(channels, string(cmd.Args[i]))
+			}
+			gr.Subscribe(conn, pattern, channels)
 		default:
 			out = resp.AppendError(out, "ERR unknown command '"+b2s(cmd.Args[0])+"'")
 		case "ping":

@@ -11,14 +11,17 @@ import (
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 )
 
-type CommandHandler func(cmd resp.Command) (out []byte, err error)
+type CommandHandler func(conn gnet.Conn, cmd resp.Command) (out []byte, err error)
 
 type GRedis interface {
 	Serve(addr string, options ...gnet.Option) error
+	OnCommand(h CommandHandler)
+	Subscribe(conn gnet.Conn, pattern bool, channels []string)
+	Publish(channel, message string) int
 }
 
-func NewGRedis(h CommandHandler) GRedis {
-	return &gRedis{handler: h, buffers: make(map[gnet.Conn]*connBuffer, 1024)}
+func NewGRedis() GRedis {
+	return &gRedis{buffers: make(map[gnet.Conn]*connBuffer, 1024), pubSub: newPubSub()}
 }
 
 type connBuffer struct {
@@ -31,6 +34,19 @@ type gRedis struct {
 	handler CommandHandler
 	rw      sync.RWMutex
 	buffers map[gnet.Conn]*connBuffer
+	pubSub  *pubSub
+}
+
+func (gr *gRedis) OnCommand(h CommandHandler) {
+	gr.handler = h
+}
+
+func (gr *gRedis) Subscribe(conn gnet.Conn, pattern bool, channels []string) {
+	gr.pubSub.Subscribe(conn, pattern, channels)
+}
+
+func (gr *gRedis) Publish(channel, message string) int {
+	return gr.pubSub.Publish(channel, message)
 }
 
 func (gr *gRedis) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
@@ -40,9 +56,10 @@ func (gr *gRedis) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	return
 }
 
-func (gr *gRedis) OnClose(c gnet.Conn, err error) (action gnet.Action) {
+func (gr *gRedis) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
 	gr.rw.Lock()
 	defer gr.rw.Unlock()
+	gr.pubSub.OnClose(c)
 	delete(gr.buffers, c)
 	return
 }
@@ -70,7 +87,7 @@ func (gr *gRedis) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 	if len(lastbyte) == 0 {
 		for _, cmd := range buffer.command {
-			out, err := gr.handler(cmd)
+			out, err := gr.handler(c, cmd)
 			if errors.Is(err, io.EOF) {
 				action = gnet.Close
 			}
