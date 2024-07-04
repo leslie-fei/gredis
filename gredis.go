@@ -6,6 +6,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/leslie-fei/gnettls"
+	"github.com/leslie-fei/gnettls/tls"
 	"github.com/leslie-fei/gredis/resp"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
@@ -14,7 +16,7 @@ import (
 type CommandHandler func(conn gnet.Conn, cmd resp.Command) (out []byte, err error)
 
 type GRedis interface {
-	Serve(addr string, options ...gnet.Option) error
+	Serve(addr string, tc *tls.Config, options ...gnet.Option) error
 	OnCommand(h CommandHandler)
 	Subscribe(conn gnet.Conn, pattern bool, channels []string)
 	Publish(channel, message string) int
@@ -106,6 +108,7 @@ func (gr *gRedis) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	return
 }
 
-func (gr *gRedis) Serve(addr string, options ...gnet.Option) error {
-	return gnet.Run(gr, addr, options...)
+func (gr *gRedis) Serve(addr string, tc *tls.Config, options ...gnet.Option) error {
+	return gnettls.Run(gr, addr, tc, options...)
+	//return gnet.Run(gr, addr, options...)
 }
