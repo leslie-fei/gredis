@@ -1,7 +1,6 @@
 package gredis
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"sync"
@@ -23,11 +22,10 @@ type GRedis interface {
 }
 
 func NewGRedis() GRedis {
-	return &gRedis{buffers: make(map[gnet.Conn]*connBuffer, 1024), pubSub: newPubSub()}
+	return &gRedis{pubSub: newPubSub()}
 }
 
-type connBuffer struct {
-	buf     bytes.Buffer
+type connContext struct {
 	command []resp.Command
 }
 
@@ -35,7 +33,6 @@ type gRedis struct {
 	gnet.BuiltinEventEngine
 	handler CommandHandler
 	rw      sync.RWMutex
-	buffers map[gnet.Conn]*connBuffer
 	pubSub  *pubSub
 }
 
@@ -54,7 +51,7 @@ func (gr *gRedis) Publish(channel, message string) int {
 func (gr *gRedis) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	gr.rw.Lock()
 	defer gr.rw.Unlock()
-	gr.buffers[c] = new(connBuffer)
+	c.SetContext(&connContext{})
 	return
 }
 
@@ -62,7 +59,6 @@ func (gr *gRedis) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
 	gr.rw.Lock()
 	defer gr.rw.Unlock()
 	gr.pubSub.OnClose(c)
-	delete(gr.buffers, c)
 	return
 }
 
@@ -70,25 +66,27 @@ func (gr *gRedis) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	gr.rw.RLock()
 	defer gr.rw.RUnlock()
 
-	buffer := gr.buffers[c]
-	_, err := c.WriteTo(&buffer.buf)
+	ctx := c.Context().(*connContext)
+	data, err := c.Peek(c.InboundBuffered())
 	if err != nil {
-		logging.Errorf("OnTraffic writeTo buffer error: %v", err)
+		logging.Errorf("OnTraffic peek error: %v", err)
 		return gnet.Close
 	}
 
-	var outs [][]byte
-	cmds, lastbyte, err := resp.ReadCommands(buffer.buf.Bytes())
+	cmds, lastbyte, err := resp.ReadCommands(data)
 	if err != nil {
 		_, _ = c.Write(resp.AppendError(nil, "ERR "+err.Error()))
 		return
 	}
 
-	buffer.command = append(buffer.command, cmds...)
-	buffer.buf.Reset()
+	if len(cmds) > 0 {
+		ctx.command = append(ctx.command, cmds...)
+	}
+	_, _ = c.Discard(c.InboundBuffered() - len(lastbyte))
 
-	if len(lastbyte) == 0 {
-		for _, cmd := range buffer.command {
+	var outs [][]byte
+	if len(lastbyte) == 0 && len(ctx.command) > 0 {
+		for _, cmd := range ctx.command {
 			out, err := gr.handler(c, cmd)
 			if errors.Is(err, io.EOF) {
 				action = gnet.Close
@@ -99,10 +97,8 @@ func (gr *gRedis) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			}
 			outs = append(outs, out)
 		}
-		buffer.command = buffer.command[:0]
+		ctx.command = ctx.command[:0]
 		_, _ = c.Writev(outs)
-	} else {
-		buffer.buf.Write(lastbyte)
 	}
 
 	return
@@ -110,5 +106,4 @@ func (gr *gRedis) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 func (gr *gRedis) Serve(addr string, tc *tls.Config, options ...gnet.Option) error {
 	return gnettls.Run(gr, addr, tc, options...)
-	//return gnet.Run(gr, addr, options...)
 }

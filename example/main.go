@@ -11,6 +11,7 @@ import (
 	"github.com/leslie-fei/gredis"
 	"github.com/leslie-fei/gredis/resp"
 	"github.com/panjf2000/gnet/v2"
+	"github.com/panjf2000/gnet/v2/pkg/logging"
 )
 
 func main() {
@@ -27,6 +28,8 @@ func main() {
 	flag.BoolVar(&reusePort, "reusePort", false, "reusePort")
 	flag.BoolVar(&enableTLS, "tls", false, "enable TLS")
 	flag.Parse()
+
+	logging.Infof("network: %v, addr: %s, multicore: %v, reusePort: %v, tls: %v", network, addr, multicore, reusePort, enableTLS)
 
 	gr := gredis.NewGRedis()
 	gr.OnCommand(func(conn gnet.Conn, cmd resp.Command) (out []byte, err error) {
