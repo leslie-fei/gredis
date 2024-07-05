@@ -17,19 +17,17 @@ import (
 func main() {
 	var mu sync.RWMutex
 	var items = make(map[string][]byte, 1024)
-	var network string
 	var addr string
 	var multicore bool
 	var reusePort bool
 	var enableTLS bool
-	flag.StringVar(&network, "network", "tcp", "server network (default \"tcp\")")
-	flag.StringVar(&addr, "addr", ":6380", "server addr (default \":6380\")")
+	flag.StringVar(&addr, "addr", "tcp://:6380", `server addr (default "tcp://:6380")`)
 	flag.BoolVar(&multicore, "multicore", true, "multicore")
-	flag.BoolVar(&reusePort, "reusePort", true, "reusePort")
+	flag.BoolVar(&reusePort, "reusePort", false, "reusePort")
 	flag.BoolVar(&enableTLS, "tls", false, "enable TLS")
 	flag.Parse()
 
-	logging.Infof("network: %v, addr: %s, multicore: %v, reusePort: %v, tls: %v", network, addr, multicore, reusePort, enableTLS)
+	logging.Infof("addr: %s, multicore: %v, reusePort: %v, tls: %v", addr, multicore, reusePort, enableTLS)
 
 	gr := gredis.NewGRedis()
 	gr.OnCommand(func(conn gnet.Conn, cmd resp.Command) (out []byte, err error) {
@@ -123,7 +121,7 @@ func main() {
 		}
 	}
 
-	err := gr.Serve("tcp://:6380", tc, gnet.WithMulticore(multicore), gnet.WithReusePort(reusePort))
+	err := gr.Serve(addr, tc, gnet.WithMulticore(multicore), gnet.WithReusePort(reusePort))
 	if err != nil {
 		panic(err)
 	}

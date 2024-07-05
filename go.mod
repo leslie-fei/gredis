@@ -2,10 +2,12 @@ module github.com/leslie-fei/gredis
 
 go 1.22
 
-require github.com/panjf2000/gnet/v2 v2.5.7
+require (
+	github.com/leslie-fei/gnettls v0.0.0-20240425065216-47a035c6596e
+	github.com/panjf2000/gnet/v2 v2.5.7
+)
 
 require (
-	github.com/leslie-fei/gnettls v0.0.0-20240425065216-47a035c6596e // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
